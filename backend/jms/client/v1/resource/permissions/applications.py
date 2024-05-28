@@ -1,0 +1,41 @@
+from jms.client import base, mixin
+from jms.client.v1.router import ApplicationPermissionRouter
+
+
+class ApplicationPermission(base.BaseResource):
+    def __str__(self):
+        name = getattr(self, 'name')
+        return f'应用授权-> {name}'
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class ApplicationPermissionManager(base.BaseManager,
+                                   mixin.ApplicationMixin):
+    resource_class = ApplicationPermission
+
+    def __init__(self, api_client):
+        router = ApplicationPermissionRouter(self)
+        super().__init__(api_client, router)
+
+    def list(self):
+        return self._list()
+
+    def get(self, resource):
+        return self._get(resource)
+
+    def update(self, resource, attribute=None):
+        return self._update(resource, attribute)
+
+    def create(self, attribute=None, resource=None):
+        must_attr = ('name', 'category', 'type')
+        attrs = self.get_latest_attribute(resource, attribute)
+
+        self.required_params_check(must_attr, attrs)
+        self.validated_category_and_type(attrs)
+
+        return self._create(attribute=attribute, resource=resource)
+
+    def delete(self, resource):
+        self._delete(resource)
