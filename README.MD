@@ -73,10 +73,10 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyinstaller
 cd backend
 # 打包, 打包文件在 dist 目录下
 # windows 平台打包 exe 命令
-pyinstaller --onefile --add-data "jms;jms" --add-data "services;services" --add-data "static;static" app.py
+pyinstaller --onefile --hidden-import=blinker --hidden-import=certifi --hidden-import=charset-normalizer --hidden-import=click --hidden-import=colorama --hidden-import=et-xmlfile --hidden-import=Flask --hidden-import=Flask-Cors --hidden-import=httpsig --hidden-import=idna --hidden-import=itsdangerous --hidden-import=Jinja2 --hidden-import=MarkupSafe --hidden-import=numpy --hidden-import=openpyxl --hidden-import=pandas --hidden-import=pycryptodome --hidden-import=python-dateutil --hidden-import=pytz --hidden-import=requests --hidden-import=setuptools --hidden-import=six --hidden-import=tzdata --hidden-import=urllib3 --hidden-import=Werkzeug --add-data "jms;jms" --add-data "services;services" --add-data "static;static" app.py
 
 # MacOS 电脑打包执行文件命令
-pyinstaller --onefile --add-data "jms:jms" --add-data "services:services" --add-data "static:static" app.py
+pyinstaller --onefile --hidden-import=blinker --hidden-import=certifi --hidden-import=charset-normalizer --hidden-import=click --hidden-import=colorama --hidden-import=et-xmlfile --hidden-import=Flask --hidden-import=Flask-Cors --hidden-import=httpsig --hidden-import=idna --hidden-import=itsdangerous --hidden-import=Jinja2 --hidden-import=MarkupSafe --hidden-import=numpy --hidden-import=openpyxl --hidden-import=pandas --hidden-import=pycryptodome --hidden-import=python-dateutil --hidden-import=pytz --hidden-import=requests --hidden-import=setuptools --hidden-import=six --hidden-import=tzdata --hidden-import=urllib3 --hidden-import=Werkzeug --add-data "jms:jms" --add-data "services:services" --add-data "static:static" app.py
 ```
 双击运行 dist 目录下的可执行程序，浏览器访问 http://127.0.0.1:5000
 

@@ -1,7 +1,7 @@
 import io
 import os
 
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 import services.service
@@ -20,6 +20,7 @@ app.config['APP_STATIC_DIR'] = static_path
 def index():
     return app.send_static_file('index.html')
 
+
 # 前端静态文件下载
 @app.route('/assets/<path:filename>')
 def serve_static(filename):
@@ -36,13 +37,13 @@ def setting():
         })
     else:
         data = request.get_json()
-        app.config['JMS_BASE_URL'] = data.get('jms_base_url')
-        app.config['JMS_ACCESS_KEY'] = data.get('jms_access_key')
-        app.config['JMS_ACCESS_SECRET'] = data.get('jms_access_secret')
+        app.config['JMS_BASE_URL'] = data.get('jms_base_url').strip()
+        app.config['JMS_ACCESS_KEY'] = data.get('jms_access_key').strip()
+        app.config['JMS_ACCESS_SECRET'] = data.get('jms_access_secret').strip()
         # 校验正确性
         try:
             # service 初始化时会查询组织等信息，可用于判断配置正确与否
-            get_enhance_service()
+            services.service.CheckJmsConfig(app.config['JMS_BASE_URL'], app.config['JMS_ACCESS_KEY'], app.config['JMS_ACCESS_SECRET'])
             return jsonify({'code': 200, 'data': None})
         except Exception as e:
             return jsonify({'code': 400, 'msg': '参数错误, %s' % e})
@@ -64,10 +65,10 @@ def upload(category):  # put application's code here
     s = get_enhance_service()
     try:
         action = getattr(s, f'import_{category}')
-        filename = action(fbs, extension)
-        return jsonify({'code': 200, 'data': {'filename': filename}})
+        res = action(fbs, extension)
+        return jsonify({'code': 200, 'data': res})
     except Exception as e:
-        return jsonify({'code': 500, 'data': {}, 'msg': str(e)})
+        return jsonify({'code': 500, 'data': {'exception': str(e)}})
 
 
 @app.route('/api/<string:category>/tpl', methods=['GET'])

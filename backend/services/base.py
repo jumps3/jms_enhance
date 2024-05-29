@@ -1,4 +1,5 @@
 import io
+import re
 
 import pandas as pd
 
@@ -26,7 +27,7 @@ class BaseService(object):
             return [self.sys_role_user.id] if sys else [self.org_role_user.id]
         else:
             ids = []
-            names = role_names.split(',')
+            names = self._split_commas(role_names)
             for nm in names:
                 rids = [r.id for r in self.sys_roles if r.name == nm or r.display_name == nm] if sys else [r.id for r in self.org_roles if r.name == nm or r.display_name == nm]
                 ids.extend(rids)
@@ -39,13 +40,28 @@ class BaseService(object):
         return self.jms_client.platform.list()
 
     @staticmethod
+    def _split_commas(text):
+        # 使用正则表达式将中文逗号和英文逗号分割开
+        # 中文逗号的 Unicode 编码为 \uFF0C
+        # 英文逗号的 Unicode 编码为 \u002C
+        pattern = r'[\uFF0C,\u002C]'
+        # 使用正则表达式进行分割
+        parts = re.split(pattern, text)
+        return parts
+
+    @staticmethod
     def _read_csv(data: io.BytesIO, usecols=None) -> pd.DataFrame:
         return pd.read_csv(data, usecols=usecols)
 
     @staticmethod
-    def _read_xlsx(data: io.BytesIO, usecols=None) -> pd.DataFrame:
-        return pd.read_excel(data, usecols=usecols)
+    def _read_xlsx(data: io.BytesIO, header=None, usecols=None) -> pd.DataFrame:
+        if header:
+            df = pd.read_excel(data, header=header)
+            df.columns = usecols
+            return df
+        else:
+            return pd.read_excel(data, usecols=usecols)
 
-    def _read_file(self, data: io.BytesIO, file_type='xlsx', usecols=None) -> pd.DataFrame:
+    def _read_file(self, data: io.BytesIO, file_type='xlsx', header=None, usecols=None) -> pd.DataFrame:
         action = getattr(self, f'_read_{file_type}')
-        return action(data, usecols)
+        return action(data, header, usecols)

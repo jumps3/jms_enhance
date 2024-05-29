@@ -2,14 +2,32 @@ import datetime
 import io
 import os
 import time
+from urllib.parse import urljoin
 
 import pandas as pd
 import pytz
+import requests
+from httpsig.requests_auth import HTTPSignatureAuth
 
 from services.base import BaseService
 
 FAILED = '失败'
 SUCCESS = '成功'
+
+
+class CheckJmsConfig(object):
+    def __init__(self, base_url, key_id, secret_id):
+        signature_headers = ['(request-target)', 'accept', 'date']
+        auth = HTTPSignatureAuth(key_id=key_id, secret=secret_id, algorithm='hmac-sha256', headers=signature_headers)
+        url = urljoin(base_url, '/api/v1/orgs/orgs/?limit=1&offset=0')
+        headers = {
+            'Accept': 'application/json',
+            'X-JMS-ORG': '00000000-0000-0000-0000-000000000000',
+            'Date': datetime.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+        }
+        resp = requests.get(url, auth=auth, headers=headers)
+        if resp.status_code != 200:
+            raise Exception(resp.text)
 
 
 class EnhanceService(BaseService):
@@ -18,7 +36,7 @@ class EnhanceService(BaseService):
         super().__init__(base_url=base_url, key_id=key_id, secret_id=secret_id)
         self.user_cols = ['*昵称', '*用户名', '密码', '*邮箱', '用户组', '系统角色', '组织角色', '组织', '手机', '启用MFA', '需要更新密码', '激活', '失效日期', '组织', '备注']
         self.asset_cols = ['*名称', '*地址', '*系统平台', '账号', '私钥', '密码', '协议组', '节点路径', '激活', '组织', '备注']
-        self.perm_cols = ['*名称', '用户', '用户组', '资产', '节点', '账号', '动作', '激活', '开始日期', '失效日期', '组织', '备注']
+        self.perm_cols = ['*名称', '用户', '用户组', '资产', '节点', '所有账号', '指定账号', '手动账号', '同名账号', '匿名账号', '连接', '上传', '下载', '删除', '复制', '粘贴', '分享','激活', '开始日期', '失效日期', '组织', '备注']
 
     # 检查必须字段哪些字段未填
     @staticmethod
@@ -56,7 +74,7 @@ class EnhanceService(BaseService):
         return None
 
     def _check_nodes(self, node_path):
-        names = node_path.split(',')
+        names = self._split_commas(node_path)
         node_ids = []
         for nm in names:
             params = {'search': nm}
@@ -103,7 +121,7 @@ class EnhanceService(BaseService):
         if pd.isna(protocolstr):
             protocols = [{'name': p.name, 'port': p.port} for p in platform.protocols if p.default]
         else:
-            ss = protocolstr.split(',')
+            ss = self._split_commas(protocolstr)
             for s in ss:
                 pt = s.split("/")
                 protocols.append({'name': pt[0], 'port': int(pt[1])})
@@ -186,7 +204,7 @@ class EnhanceService(BaseService):
         ids = []
         unexists = []
         if groupstr:
-            group_names = groupstr.split(',')
+            group_names = self._split_commas(groupstr)
             for gn in group_names:
                 gn = gn.strip()
                 params = {'name': gn}
@@ -201,7 +219,7 @@ class EnhanceService(BaseService):
     def _get_or_create_user_groups(self, groupstr):
         if groupstr:
             ids = []
-            group_names = groupstr.split(',')
+            group_names = self._split_commas(groupstr)
             for gn in group_names:
                 gn = gn.strip()
                 params = {'name': gn}
@@ -224,41 +242,45 @@ class EnhanceService(BaseService):
             return FAILED, '参数缺失，请检查以下必填列：%s' % miss_cols
 
         try:
+            msg = []
             org_role_ids = self._get_role_ids(self._pure(row['组织角色']), sys=False)
-            # 全局搜索用户
-            self.jms_client.set_org(self.jms_client.root_org)
-            root_user = self._exist_user(self._pure(row['*昵称']), self._pure(row['*用户名']))
 
-            self._set_org(self._pure(row['组织']))
-            # 平台中存在用户
-            if root_user:
-                user = self._exist_user(self._pure(row['*昵称']), self._pure(row['*用户名']))
-                if user:
-                    return FAILED, '用户已存在'
-                else:
-                    # 组织中无此用户，邀请
-                    user_ids = [root_user.id]
-                    self.jms_client.user.invite(user_ids, org_role_ids)
-                    return SUCCESS, '用户存在，已邀请进组织'
+            org_names = self._split_commas(self._pure(row['组织']))
+            # 多组织处理
+            for oname in org_names:
+                # 全局搜索用户
+                self.jms_client.set_org(self.jms_client.root_org)
+                root_user = self._exist_user(self._pure(row['*昵称']), self._pure(row['*用户名']))
 
-            data = {
-                "password_strategy": "custom",
-                "password": self._pure(row['密码']),
-                "need_update_password": self._check_enable(row['需要更新密码']),
-                "mfa_level": 1 if self._check_enable(row['启用MFA']) else 0,
-                "source": "local",
-                "system_roles": self._get_role_ids(self._pure(row['系统角色'])),
-                "org_roles": org_role_ids,
-                "is_active": self._check_enable(row['激活']),
-                "date_expired": self._pure(row['失效日期']),
-                "phone":  str(self._pure(row['手机'])),
-                "name": self._pure(row['*昵称']),
-                "username": self._pure(row['*用户名']),
-                "email": self._pure(row['*邮箱']),
-                "groups": self._get_or_create_user_groups(self._pure(row['用户组'])),
-                "comment": self._pure(row['备注'])
-            }
-            self.jms_client.user.create(data)
+                self._set_org(oname)
+                # 平台中存在用户
+                if root_user:
+                    user = self._exist_user(self._pure(row['*昵称']), self._pure(row['*用户名']))
+                    if not user:
+                        # 组织中无此用户，邀请
+                        user_ids = [root_user.id]
+                        self.jms_client.user.invite(user_ids, org_role_ids)
+                        continue
+
+                # 不存在用户则创建
+                data = {
+                    "password_strategy": "custom",
+                    "password": self._pure(row['密码']),
+                    "need_update_password": self._check_enable(row['需要更新密码']),
+                    "mfa_level": 1 if self._check_enable(row['启用MFA']) else 0,
+                    "source": "local",
+                    "system_roles": self._get_role_ids(self._pure(row['系统角色'])),
+                    "org_roles": org_role_ids,
+                    "is_active": self._check_enable(row['激活']),
+                    "date_expired": self._pure(row['失效日期']),
+                    "phone":  str(self._pure(row['手机'])),
+                    "name": self._pure(row['*昵称']),
+                    "username": self._pure(row['*用户名']),
+                    "email": self._pure(row['*邮箱']),
+                    "groups": self._get_or_create_user_groups(self._pure(row['用户组'])),
+                    "comment": self._pure(row['备注'])
+                }
+                self.jms_client.user.create(data)
             return SUCCESS, ''
         except Exception as e:
             return FAILED, '添加用户失败: %s' % e
@@ -267,7 +289,7 @@ class EnhanceService(BaseService):
         ids = []
         unexists = []
         if userstr:
-            user_names = userstr.split(',')
+            user_names = self._split_commas(userstr)
             for name in user_names:
                 name = name.strip()
                 params = {'name': name}
@@ -283,7 +305,7 @@ class EnhanceService(BaseService):
         ids = []
         unexists = []
         if assetstr:
-            asset_names = assetstr.split(',')
+            asset_names = self._split_commas(assetstr)
             for name in asset_names:
                 name = name.strip()
                 params = {'name': name}
@@ -299,7 +321,7 @@ class EnhanceService(BaseService):
         ids = []
         unexists = []
         if nodestr:
-            node_names = nodestr.split(',')
+            node_names = self._split_commas(nodestr)
             for name in node_names:
                 name = name.strip()
                 params = {'search': name}
@@ -311,39 +333,39 @@ class EnhanceService(BaseService):
                     unexists.append(name)
         return ids, unexists
 
-    def _get_accounts(self, accountstr):
-        accountMap = {'所有账号': '@ALL', '指定账号': '@SPEC', '手动账号': '@INPUT', '同名账号': '@USER', '匿名账号': '@ANON'}
+    def _get_accounts(self, row: pd.Series):
+        input_accounts = {
+            '@ALL': self._check_enable(row['所有账号']),
+            '@SPEC': self._pure(row['指定账号']),
+            '@INPUT': self._check_enable(row['手动账号']),
+            '@USER': self._check_enable(row['同名账号']),
+            '@ANON': self._check_enable(row['匿名账号']),
+        }
         accounts = []
-        if accountstr in ['@ALL', '所有账号']:
-            return ['@ALL']
-        else:
-            for a in accountstr.split(','):
-                a = a.strip()
-                if accountMap.get(a):
-                    accounts.append(accountMap.get(a))
-                else:
-                    accounts.append(a)
-            return accounts
+        for ia in input_accounts.keys():
+            value = input_accounts[ia]
+            if isinstance(value, bool):
+                if value:
+                    accounts.append(ia)
+            else:
+                accounts.append(ia)
+                names = value.strip().split(',')
+                accounts.extend(names)
+        return accounts
 
+    def _get_actions(self, row: pd.Series):
+        input_actions = {
+            'connect': self._check_enable(row['连接']),
+            'upload': self._check_enable(row['上传']),
+            'download': self._check_enable(row['下载']),
+            'copy': self._check_enable(row['复制']),
+            'paste': self._check_enable(row['粘贴']),
+            'delete': self._check_enable(row['删除']),
+            'share': self._check_enable(row['分享']),
+        }
+        actions = [ia for ia in input_actions.keys() if input_actions[ia]]
+        return actions
 
-    def _get_actions(self, actionstr):
-        unexists = []
-        all_actions = {'连接': 'connect', '上传': 'upload', '下载': 'download', '复制': 'copy', '粘贴': 'paste', '删除': 'delete', '分享': 'share'}
-        if actionstr.lower() == 'all':
-            return all_actions.values(), unexists
-        else:
-            actions = []
-            for a in actionstr.split(','):
-                a = a.strip()
-                if all_actions.get(a):
-                    actions.append(all_actions.get(a))
-                else:
-                    # 适配英文
-                    if a in all_actions.values():
-                        actions.append(a)
-                    else:
-                        unexists.append(a)
-            return actions, unexists
 
     def _get_perms_date(self, start_date, end_date):
         if start_date == '':
@@ -388,11 +410,9 @@ class EnhanceService(BaseService):
         if len(unexists_assets) > 0:
             return FAILED, '存在资产未找到，请检查资产名：%s' % unexists_nodes
 
-        accounts = self._get_accounts(self._pure(row['账号'], '@ALL'))
+        accounts = self._get_accounts(row)
 
-        actions, err = self._get_actions(self._pure(row['动作'], 'all'))
-        if err:
-            return FAILED, '动作参数错误, %s' % err
+        actions = self._get_actions(row)
 
         date_start, date_end = self._get_perms_date(self._pure(row['开始日期']), self._pure(row['失效日期']))
         try:
@@ -433,7 +453,9 @@ class EnhanceService(BaseService):
         now = time.strftime("%Y%m%d%H%M%S", time.localtime())
         filename = f'users-{now}.xlsx'
         df.to_excel(os.path.join(self.app_static_dir, 'results', filename), index=False)
-        return filename
+        res = df['状态'].value_counts().to_dict()
+        res['filename'] = filename
+        return res
 
     '''
     导入资产
@@ -452,11 +474,13 @@ class EnhanceService(BaseService):
         now = time.strftime("%Y%m%d%H%M%S", time.localtime())
         filename = f'assets-{now}.xlsx'
         df.to_excel(os.path.join(self.app_static_dir, 'results', filename), index=False)
-        return filename
+        res = df['状态'].value_counts().to_dict()
+        res['filename'] = filename
+        return res
 
     # 导入授权
     def import_perms(self, data: io.BytesIO, file_type='xlsx'):
-        df = self._read_file(data, file_type=file_type, usecols=self.perm_cols)
+        df = self._read_file(data, file_type=file_type, header=[0, 1], usecols=self.perm_cols)
         df[['状态', '异常']] = df.apply(self._add_perm, axis=1, result_type='expand')
 
         # 结果保存到本地
@@ -464,5 +488,7 @@ class EnhanceService(BaseService):
         filename = f'perms-{now}.xlsx'
         path = os.path.join(self.app_static_dir, 'results', filename)
         df.to_excel(path, index=False)
-        return filename
+        res = df['状态'].value_counts().to_dict()
+        res['filename'] = filename
+        return res
 
