@@ -1,7 +1,7 @@
 import abc
 import inspect
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 from .exceptions import JMSException
 
@@ -90,7 +90,7 @@ class BaseManager(object):
     def _list(self, **params):
         url = self.router.get_url('list')
         if params:
-            url += '?' + urlencode(params)
+            url += '?' + urlencode(params, quote_via=quote)
 
         resp, body = self.client.request(url, 'get')
 

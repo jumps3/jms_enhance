@@ -9,7 +9,7 @@ import services.service
 app_path = os.path.abspath(__file__)
 static_path = os.path.join(os.path.dirname(app_path), 'static')
 
-app = Flask(__name__, static_folder=static_path + '/dist')
+app = Flask(__name__, static_folder=static_path)
 # 允许跨域
 CORS(app)
 app.config['APP_STATIC_DIR'] = static_path
@@ -22,18 +22,23 @@ def index():
 
 
 # 前端静态文件下载
-@app.route('/assets/<path:filename>')
+@app.route('/<path:filename>')
 def serve_static(filename):
-    return app.send_static_file(f'assets/{filename}')
+    return app.send_static_file(filename)
+
+
+def get_config(key, default=None):
+    return app.config.get(key, os.environ.get(key, default))
+
 
 # 设置堡垒机的 URL 及密钥信息
 @app.route('/api/settings', methods=['POST', 'GET'])
 def setting():
     if request.method.lower() == 'get':
         return jsonify({
-            'jms_base_url': app.config.get('JMS_BASE_URL', ''),
-            'jms_access_key': app.config.get('JMS_ACCESS_KEY', ''),
-            'jms_access_secret': app.config.get('JMS_ACCESS_SECRET', '')
+            'jms_base_url': get_config('JMS_BASE_URL', ''),
+            'jms_access_key': get_config('JMS_ACCESS_KEY', ''),
+            'jms_access_secret': get_config('JMS_ACCESS_SECRET', '')
         })
     else:
         data = request.get_json()
@@ -50,11 +55,15 @@ def setting():
 
 
 def get_enhance_service():
-    base_url = app.config['JMS_BASE_URL']
-    key_id = app.config['JMS_ACCESS_KEY']
-    secret_id = app.config['JMS_ACCESS_SECRET']
-    s = services.service.EnhanceService(base_url=base_url, key_id=key_id, secret_id=secret_id, app_static_dir=static_path)
-    return s
+    service = app.config.get('AIDE_SERVICE', None)
+    if not service:
+        base_url = get_config('JMS_BASE_URL')
+        key_id = get_config('JMS_ACCESS_KEY')
+        secret_id = get_config('JMS_ACCESS_SECRET')
+        service = services.service.EnhanceService(base_url=base_url, key_id=key_id, secret_id=secret_id, app_static_dir=static_path)
+        app.config['AIDE_SERVICE'] = service
+    return service
+
 
 # 上传文件
 @app.route('/api/<string:category>/upload', methods=['POST'])
@@ -78,12 +87,6 @@ def download_template(category):
     resp = send_file(file_path, as_attachment=True)
     resp.headers["Content-Disposition"] = f"attachment; filename={tpl_file}"
     return resp
-
-
-@app.route('/api/result/<string:filename>', methods=['GET'])
-def download_result(filename):
-    file_path = os.path.join(app.config['APP_STATIC_DIR'], 'results', filename)
-    return send_file(str(file_path), as_attachment=True)
 
 
 if __name__ == '__main__':

@@ -5,6 +5,10 @@
  
 > 架构：jms_enhance 服务后端使用 python 的 Flask 框架，前端使用 vue 编写。
 
+### 开发环境
+> Python：v3.11  
+> Node：v20.14
+
 ### 开发运行
 
 - 前端打包
@@ -57,9 +61,9 @@ python -m flask run
 #### 方式 1、基于 docker 
 ```shell
 # 编译
-docker buildx build --platform=linux/amd64 jms_enhance:v1.0 .
+docker buildx build --platform=linux/amd64 jms_aide:v1.0 .
 # 运行
-docker run -d -p 5000:5000 --name jms_enhance jms_enhance:v1.0
+docker run -d -p 5000:5000 --name jms_enhance jms_aide:v1.0
 ```
 
 #### 方式 2、基于可执行文件
@@ -68,31 +72,24 @@ docker run -d -p 5000:5000 --name jms_enhance jms_enhance:v1.0
 
 - Windows 打包
 ```shell
-cd backend
-# 打包, 打包文件在 dist 目录下
-python -m venv .venv
-
-# windows 平台打包 exe 命令
-.\.venv\Scripts\activate
-pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
-pyinstaller --onefile -D -p ./.venv/Lib/site-packages --add-data "jms;jms" --add-data "services;services" --add-data "static;static" app.py
+.\build.bat
 ```
 
 - Linux/MacOS 打包
 ```shell
-cd backend
-# 打包, 打包文件在 dist 目录下
-python -m venv .venv
-
-# Linux/MacOS 打包执行文件命令
-source ./.venv/bin/activate
-pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
-pyinstaller --onefile -D -p ./.venv/Lib/site-packages --add-data "jms:jms" --add-data "services:services" --add-data "static:static" app.py
+./build.sh
 ```
 
-双击运行 dist 目录下的可执行程序，浏览器访问 http://127.0.0.1:5000
+双击运行 backend/dist/ 目录下的可执行程序，浏览器访问 http://127.0.0.1:5000
 
 如果需要修改端口, 修改 app.py 文件中最后一行中 port 值编译即可
 ```shell
 app.run(host='0.0.0.0', port=5000)
+```
+
+支持通过环境变量的方式预设 JumpServer 配置信息
+```shell
+JMS_BASE_URL=
+JMS_ACCESS_KEY=
+JMS_ACCESS_SECRET=
 ```
